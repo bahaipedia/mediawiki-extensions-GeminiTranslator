@@ -121,7 +121,7 @@ class TranslateHandler extends SimpleHandler {
 				self::PARAM_SOURCE => 'body',
 				ParamValidator::PARAM_TYPE => 'integer',
 				ParamValidator::PARAM_REQUIRED => false,
-				self::PARAM_DEFAULT => 0
+				ParamValidator::PARAM_DEFAULT => 0
 			]
 		];
 	}
