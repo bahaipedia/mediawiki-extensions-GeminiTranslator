@@ -3,20 +3,13 @@ window.ext.geminiTranslator = window.ext.geminiTranslator || {};
 
 ( function ( mw, $ ) {
 
-    function GeminiTranslator( $trigger ) {
-        this.$trigger = $trigger;
+    function GeminiTranslator() {
         this.revision = mw.config.get( 'wgRevisionId' );
         this.$content = $( '#mw-content-text > .mw-parser-output' );
-        
-        // Setup UI components
         this.setupDialog();
-        
-        this.$trigger.on( 'click', this.openDialog.bind( this ) );
     }
 
     GeminiTranslator.prototype.setupDialog = function () {
-        // Create a simple Prompt dialog for language code
-        // In a future version, this should be a dropdown of supported languages
         this.langInput = new OO.ui.TextInputWidget( { 
             placeholder: 'es', 
             value: 'es' 
@@ -26,7 +19,6 @@ window.ext.geminiTranslator = window.ext.geminiTranslator || {};
             size: 'medium'
         } );
         
-        // Hacky way to set title/actions on a generic ProcessDialog instance
         this.dialog.title.setLabel( 'Translate Page' );
         this.dialog.actions.set( [
             { action: 'translate', label: 'Translate', flags: 'primary' },
@@ -39,7 +31,6 @@ window.ext.geminiTranslator = window.ext.geminiTranslator || {};
             this.langInput.$element 
         );
 
-        // Handle actions
         this.dialog.getProcess = ( action ) => {
             if ( action === 'translate' ) {
                 this.startTranslation( this.langInput.getValue() );
@@ -54,29 +45,20 @@ window.ext.geminiTranslator = window.ext.geminiTranslator || {};
         this.windowManager = windowManager;
     };
 
-    GeminiTranslator.prototype.openDialog = function ( e ) {
-        e.preventDefault();
+    GeminiTranslator.prototype.open = function () {
         this.windowManager.openWindow( this.dialog );
     };
 
     GeminiTranslator.prototype.startTranslation = function ( targetLang ) {
-        // Visual feedback
         this.$content.css( 'opacity', '0.5' );
         mw.notify( 'Starting translation...' );
 
-        // 1. Translate Lead (Section 0)
         this.fetchSection( 0, targetLang ).done( ( data ) => {
-            
-            // Clear existing content and replace with Lead
             this.$content.html( data.html );
             this.$content.css( 'opacity', '1' );
             
-            // Add a container for subsequent sections
             this.$restOfPage = $( '<div>' ).attr('id', 'gemini-translated-body').appendTo( this.$content );
 
-            // 2. Determine how many sections exist
-            // We can infer this from the TOC if it exists, or just try requesting until we get empty
-            // For robustness, let's just try fetching sections 1..10 sequentially
             this.fetchNextSection( 1, targetLang );
 
         } ).fail( ( err ) => {
@@ -87,25 +69,19 @@ window.ext.geminiTranslator = window.ext.geminiTranslator || {};
     };
 
     GeminiTranslator.prototype.fetchNextSection = function ( sectionId, targetLang ) {
-        // Visual indicator at bottom
         var $loader = $( '<div>' ).text( 'Loading section ' + sectionId + '...' ).appendTo( this.$restOfPage );
 
         this.fetchSection( sectionId, targetLang ).done( ( data ) => {
             $loader.remove();
             
             if ( data.html && data.html.trim() !== '' ) {
-                // Append the new section
                 $( '<div>' ).html( data.html ).appendTo( this.$restOfPage );
-                
-                // Fetch the next one
                 this.fetchNextSection( sectionId + 1, targetLang );
             } else {
-                // No more content
                 mw.notify( 'Translation complete!' );
             }
         } ).fail( () => {
             $loader.remove();
-            // Assume failure means end of sections or error
         } );
     };
 
@@ -121,12 +97,16 @@ window.ext.geminiTranslator = window.ext.geminiTranslator || {};
         } );
     };
 
-    // Initialize
+    // Initialize Singleton and Attach Event
     $( function () {
-        var $btn = $( '#ca-gemini-translate' );
-        if ( $btn.length ) {
-            new GeminiTranslator( $btn );
-        }
+        // Create one instance of the translator
+        var translator = new GeminiTranslator();
+
+        // Listen for clicks on the indicator link
+        $( 'body' ).on( 'click', '#ca-gemini-translate', function( e ) {
+            e.preventDefault();
+            translator.open();
+        } );
     } );
 
 }( mediaWiki, jQuery ) );
