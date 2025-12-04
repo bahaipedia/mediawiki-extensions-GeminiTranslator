@@ -6,9 +6,7 @@ use MediaWiki\Extension\GeminiTranslator\PageTranslator;
 use MediaWiki\Rest\HttpException;
 use MediaWiki\Rest\SimpleHandler;
 use MediaWiki\Revision\RevisionLookup;
-use MediaWiki\Parser\Parser;
 use MediaWiki\Parser\ParserOptions;
-use MediaWiki\Parser\ParserOutput;
 use MediaWiki\MediaWikiServices;
 use Wikimedia\ParamValidator\ParamValidator;
 
@@ -26,36 +24,35 @@ class TranslateHandler extends SimpleHandler {
 	}
 
 	public function execute() {
+		error_log( "GEMINI DEBUG: Starting execution..." );
+		
 		$params = $this->getValidatedParams();
 		$body = $this->getValidatedBody();
 		
 		$revId = $params['rev_id'];
 		$targetLang = $body['targetLang'];
-		// Default to section 0 (Lead) if not provided
 		$sectionId = $body['section'] ?? 0;
+
+		error_log( "GEMINI DEBUG: Params loaded. Rev: $revId, Lang: $targetLang, Section: $sectionId" );
 
 		// 1. Load Revision
 		$rev = $this->revisionLookup->getRevisionById( $revId );
 		if ( !$rev ) {
+			error_log( "GEMINI DEBUG: Revision not found" );
 			throw new HttpException( 'Revision not found', 404 );
 		}
 
-		// 2. Get Section Content (Wikitext)
-		// We use the content handler to slice the wikitext by section index
+		// 2. Get Section Content
 		$content = $rev->getContent( 'main' );
 		$sectionContent = null;
 		
 		if ( $content ) {
-			// This is a bit of a workaround to get section-specific HTML reliably
-			// We fetch the wikitext section, then parse it.
-			// Note: This might miss context (like references defined elsewhere), 
-			// but it supports the Lazy Load architecture best.
+			error_log( "GEMINI DEBUG: Content found. Attempting to get section $sectionId" );
+			// Note: getSection can return false/null if section doesn't exist
 			$sectionBlob = $content->getSection( $sectionId );
 			if ( $sectionBlob ) {
 				$sectionContent = $sectionBlob;
 			} else {
-				// Fallback: if section extraction fails or is 0 (whole page sometimes), try getting full content
-				// For now, if section is missing, we assume end of content
 				if ( $sectionId !== 0 ) { 
 					return $this->getResponseFactory()->createJson( [ 'html' => '' ] );
 				}
@@ -64,16 +61,16 @@ class TranslateHandler extends SimpleHandler {
 		}
 
 		if ( !$sectionContent ) {
+			error_log( "GEMINI DEBUG: Section content extraction failed" );
 			throw new HttpException( 'Could not extract section content', 500 );
 		}
 
-		// 3. Parse Wikitext to HTML
-		// We need a ParserOptions object configured for the user/wiki
+		// 3. Parse Wikitext
+		error_log( "GEMINI DEBUG: Parsing wikitext..." );
 		$services = MediaWikiServices::getInstance();
 		$parser = $services->getParser();
 		$popts = ParserOptions::newFromContext( $this->getContext() );
 		
-		// Render the section
 		$output = $parser->parse( 
 			$sectionContent->getText(), 
 			$rev->getPageAsLinkTarget(), 
@@ -82,13 +79,20 @@ class TranslateHandler extends SimpleHandler {
 		);
 		
 		$sourceHtml = $output->getText();
+		error_log( "GEMINI DEBUG: Parsed HTML length: " . strlen($sourceHtml) );
 
 		// 4. Translate via Gemini Block Engine
+		error_log( "GEMINI DEBUG: Calling PageTranslator->translateHtml..." );
+		
+		// !!! THIS IS LIKELY WHERE IT CRASHES !!!
 		$status = $this->translator->translateHtml( $sourceHtml, $targetLang );
 
 		if ( !$status->isOK() ) {
+			error_log( "GEMINI DEBUG: Translation failed: " . print_r($status->getErrors(), true) );
 			return $this->getResponseFactory()->createJson( [ 'error' => $status->getErrors() ], 400 );
 		}
+
+		error_log( "GEMINI DEBUG: Translation success!" );
 
 		return $this->getResponseFactory()->createJson( [
 			'html' => $status->getValue(),
