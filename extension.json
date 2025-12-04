@@ -1,38 +1,35 @@
 {
-	"name": "AdhocTranslation",
-	"version": "2.0.0-alpha",
+	"name": "GeminiTranslator",
+	"version": "1.0.0",
 	"license-name": "GPL-3.0-only",
 	"author": [
-		"Dejan Savuljesku",
-		"[https://www.hallowelt.com Hallo Welt! GmbH]"
+		"Sarah Haslip",
+		"Dejan Savuljesku"
 	],
-	"url": "https://en.wiki.bluespice.com/wiki/Reference:AdhocTranslation",
-	"descriptionmsg": "adhoctranslation-desc",
+	"descriptionmsg": "geminitranslator-desc",
 	"requires": {
-		"MediaWiki": ">= 1.43.0"
+		"MediaWiki": ">= 1.39.0"
 	},
 	"MessagesDirs": {
-		"AdhocTranslation": "i18n"
+		"GeminiTranslator": "i18n"
 	},
 	"AutoloadNamespaces": {
-		"MediaWiki\\Extension\\AdhocTranslation\\": "src/"
+		"MediaWiki\\Extension\\GeminiTranslator\\": "src/"
 	},
-	"TestAutoloadNamespaces": {
-		"MediaWiki\\Extension\\AdhocTranslation\\Tests\\": "tests/phpunit/"
+	"config": {
+		"GeminiApiKey": "",
+		"GeminiModel": "gemini-1.5-flash"
 	},
-	"attributes": {
-	},
-	"callback": "mwsInitComponents",
 	"ResourceModules": {
-		"ext.adhoctranslation.bootstrap": {
+		"ext.geminitranslator.bootstrap": {
 			"scripts": [
 				"bootstrap.js"
 			],
 			"messages": [
-				"adhoctranslation-ui-translating",
-				"adhoctranslation-ui-translated",
-				"adhoctranslation-ui-error",
-				"adhoctranslation-ui-original"
+				"geminitranslator-ui-translating",
+				"geminitranslator-ui-translated",
+				"geminitranslator-ui-error",
+				"geminitranslator-ui-original"
 			],
 			"dependencies": [
 				"oojs-ui"
@@ -41,25 +38,28 @@
 	},
 	"ResourceFileModulePaths": {
 		"localBasePath": "resources",
-		"remoteExtPath": "AdhocTranslation/resources"
+		"remoteExtPath": "GeminiTranslator/resources"
 	},
 	"Hooks": {
 		"SkinTemplateNavigation::Universal": "addContentAction",
-		"BlueSpiceDiscoveryTemplateDataProviderAfterInit": "addContentAction",
-		"BeforePageDisplay": "addContentAction"
+		"BeforePageDisplay": "addContentAction",
+		"LoadExtensionSchemaUpdates": "onLoadExtensionSchemaUpdates"
 	},
 	"HookHandlers": {
 		"addContentAction": {
-			"class": "MediaWiki\\Extension\\AdhocTranslation\\Hook\\AddContentAction",
-			"services": [ "AdhocTranslation.PageTranslator" ]
+			"class": "MediaWiki\\Extension\\GeminiTranslator\\Hook\\AddContentAction",
+			"services": [ "GeminiTranslator.PageTranslator" ]
+		},
+		"onLoadExtensionSchemaUpdates": {
+			"class": "MediaWiki\\Extension\\GeminiTranslator\\Hook\\SchemaUpdates"
 		}
 	},
 	"RestRoutes": [ {
 		"method": "POST",
-		"path": "/adhoc-translation/translate_page/{rev_id}",
-		"class": "MediaWiki\\Extension\\AdhocTranslation\\Rest\\TranslatePageHandler",
+		"path": "/gemini-translator/translate_section/{rev_id}",
+		"class": "MediaWiki\\Extension\\GeminiTranslator\\Rest\\TranslateHandler",
 		"services": [
-			"TitleFactory", "RevisionLookup", "AdhocTranslation.PageTranslator"
+			"TitleFactory", "RevisionLookup", "GeminiTranslator.PageTranslator"
 		]
 	} ],
 	"ServiceWiringFiles": [
