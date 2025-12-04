@@ -47,7 +47,6 @@
 		"remoteExtPath": "GeminiTranslator/resources"
 	},
 	"Hooks": {
-		"SkinTemplateNavigation::Universal": "addContentAction",
 		"BeforePageDisplay": "addContentAction",
 		"LoadExtensionSchemaUpdates": "onLoadExtensionSchemaUpdates"
 	},
