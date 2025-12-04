@@ -1,49 +1,75 @@
 window.ext = window.ext || {};
 window.ext.geminiTranslator = window.ext.geminiTranslator || {};
-console.log('Gemini: Loaded bootstrap.js');
+console.log('Gemini: Loaded v2 bootstrap.js');
 ( function ( mw, $ ) {
 
-    function GeminiTranslator() {
-        this.revision = mw.config.get( 'wgRevisionId' );
-        this.$content = $( '#mw-content-text > .mw-parser-output' );
-        this.setupDialog();
+    // -----------------------------------------------------------
+    // 1. Define the Custom Dialog Class
+    // -----------------------------------------------------------
+    function GeminiDialog( config ) {
+        GeminiDialog.super.call( this, config );
     }
+    OO.inheritClass( GeminiDialog, OO.ui.ProcessDialog );
 
-    GeminiTranslator.prototype.setupDialog = function () {
+    // Static configuration
+    GeminiDialog.static.name = 'geminiDialog';
+    GeminiDialog.static.title = 'Translate Page';
+    GeminiDialog.static.actions = [
+        { action: 'translate', label: 'Translate', flags: 'primary' },
+        { action: 'cancel', label: 'Cancel', flags: 'safe' }
+    ];
+
+    // Initialize content
+    GeminiDialog.prototype.initialize = function () {
+        GeminiDialog.super.prototype.initialize.call( this );
+
+        this.panel = new OO.ui.PanelLayout( { padded: true, expanded: false } );
+
         this.langInput = new OO.ui.TextInputWidget( { 
             placeholder: 'es', 
             value: 'es' 
         } );
 
-        this.dialog = new OO.ui.ProcessDialog( {
-            size: 'medium'
-        } );
-        
-        this.dialog.title.setLabel( 'Translate Page' );
-        this.dialog.actions.set( [
-            { action: 'translate', label: 'Translate', flags: 'primary' },
-            { action: 'cancel', label: 'Cancel', flags: 'safe' }
-        ] );
-
-        this.dialog.initialize();
-        this.dialog.$body.append( 
+        this.panel.$element.append( 
             $( '<p>' ).text( 'Enter target language code (e.g. es, fr, de):' ),
             this.langInput.$element 
         );
 
-        this.dialog.getProcess = ( action ) => {
-            if ( action === 'translate' ) {
-                this.startTranslation( this.langInput.getValue() );
-                return new OO.ui.Process( () => { this.dialog.close(); } );
-            }
-            return new OO.ui.Process( () => { this.dialog.close(); } );
-        };
-
-        var windowManager = new OO.ui.WindowManager();
-        $( 'body' ).append( windowManager.$element );
-        windowManager.addWindows( [ this.dialog ] );
-        this.windowManager = windowManager;
+        this.$body.append( this.panel.$element );
     };
+
+    // Handle the "Translate" button click
+    GeminiDialog.prototype.getActionProcess = function ( action ) {
+        if ( action === 'translate' ) {
+            // Emit an event so the main controller knows to start
+            this.emit( 'translate', this.langInput.getValue() );
+            // Close the window
+            return new OO.ui.Process( function () {
+                this.close();
+            }, this );
+        }
+        // Default behavior for cancel/close
+        return GeminiDialog.super.prototype.getActionProcess.call( this, action );
+    };
+
+    // -----------------------------------------------------------
+    // 2. Define the Controller
+    // -----------------------------------------------------------
+    function GeminiTranslator() {
+        this.revision = mw.config.get( 'wgRevisionId' );
+        this.$content = $( '#mw-content-text > .mw-parser-output' );
+        
+        // Setup Window Manager
+        this.windowManager = new OO.ui.WindowManager();
+        $( 'body' ).append( this.windowManager.$element );
+
+        // Instantiate our custom dialog
+        this.dialog = new GeminiDialog();
+        this.windowManager.addWindows( [ this.dialog ] );
+
+        // Connect the dialog's 'translate' event to our logic
+        this.dialog.connect( this, { translate: 'startTranslation' } );
+    }
 
     GeminiTranslator.prototype.open = function () {
         this.windowManager.openWindow( this.dialog );
@@ -97,12 +123,15 @@ console.log('Gemini: Loaded bootstrap.js');
         } );
     };
 
-    // Initialize Singleton and Attach Event
+    // -----------------------------------------------------------
+    // 3. Initialize
+    // -----------------------------------------------------------
     $( function () {
-        // Create one instance of the translator
+        // Instantiate the controller once
         var translator = new GeminiTranslator();
+        console.log('Gemini: Translator initialized');
 
-        // Listen for clicks on the indicator link
+        // Event Delegation for the button
         $( 'body' ).on( 'click', '#ca-gemini-translate', function( e ) {
             e.preventDefault();
             translator.open();
