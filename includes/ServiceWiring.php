@@ -1,16 +1,24 @@
 <?php
 
-use MediaWiki\Extension\AdhocTranslation\PageTranslator;
+use MediaWiki\Extension\GeminiTranslator\PageTranslator;
+use MediaWiki\Extension\GeminiTranslator\Services\GeminiClient;
 use MediaWiki\MediaWikiServices;
 
 return [
-	'AdhocTranslation.PageTranslator' => static function ( MediaWikiServices $services ) {
+	'GeminiTranslator.GeminiClient' => static function ( MediaWikiServices $services ) {
+		$config = $services->getMainConfig();
+		return new GeminiClient(
+			$config->get( 'GeminiApiKey' ),
+			$config->get( 'GeminiModel' ),
+			$services->getHttpRequestFactory()
+		);
+	},
+
+	'GeminiTranslator.PageTranslator' => static function ( MediaWikiServices $services ) {
 		return new PageTranslator(
-			$services->getService( 'MWStake.DeepLTranslator' ),
-			$services->getMainWANObjectCache(),
-			$services->getUserOptionsLookup(),
-			$services->getContentLanguage(),
-			$services->getLanguageFactory()
+			$services->getService( 'GeminiTranslator.GeminiClient' ),
+			$services->getDBLoadBalancer(),
+			$services->getMainConfig()
 		);
 	},
 ];
