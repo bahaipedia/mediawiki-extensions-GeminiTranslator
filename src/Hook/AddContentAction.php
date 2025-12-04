@@ -1,78 +1,60 @@
 <?php
 
-namespace MediaWiki\Extension\AdhocTranslation\Hook;
+namespace MediaWiki\Extension\GeminiTranslator\Hook;
 
-use BlueSpice\Discovery\Hook\BlueSpiceDiscoveryTemplateDataProviderAfterInit;
-use MediaWiki\Extension\AdhocTranslation\PageTranslator;
 use MediaWiki\Hook\SkinTemplateNavigation__UniversalHook;
 use MediaWiki\Output\Hook\BeforePageDisplayHook;
 use MediaWiki\Title\Title;
-use MediaWiki\User\User;
-use StatusValue;
 
 class AddContentAction implements
 	SkinTemplateNavigation__UniversalHook,
-	BlueSpiceDiscoveryTemplateDataProviderAfterInit,
 	BeforePageDisplayHook
 {
 	/**
-	 * @var StatusValue|null
-	 */
-	private $shouldTranslate = null;
-
-	/**
-	 * @var PageTranslator
-	 */
-	private $pageTranslator;
-
-	/**
-	 * @param PageTranslator $pageTranslator
-	 */
-	public function __construct( PageTranslator $pageTranslator ) {
-		$this->pageTranslator = $pageTranslator;
-	}
-
-	/**
-	 * @inheritDoc
+	 * Adds the Javascript module if the user is logged in
 	 */
 	public function onBeforePageDisplay( $out, $skin ): void {
-		$this->assertCheck( $out->getTitle(), $skin->getUser() );
-		if ( $this->shouldTranslate->isOk() ) {
-			$out->addModules( [ 'ext.adhoctranslation.bootstrap' ] );
+		$user = $skin->getUser();
+		if ( $user->isRegistered() ) {
+			$out->addModules( [ 'ext.geminitranslator.bootstrap' ] );
 		}
 	}
 
 	/**
-	 * @inheritDoc
-	 */
-	public function onBlueSpiceDiscoveryTemplateDataProviderAfterInit( $registry ): void {
-		$registry->unregister( 'toolbox', 'ca-adhoc-translate' );
-		$registry->register( 'actions_secondary', 'ca-adhoc-translate' );
-	}
-
-	/**
-	 * @inheritDoc
+	 * Adds the Menu Item / Button
 	 */
 	public function onSkinTemplateNavigation__Universal( $sktemplate, &$links ): void {
-		$this->assertCheck( $sktemplate->getTitle(), $sktemplate->getUser() );
-		if ( $this->shouldTranslate->isOk() ) {
-			$links['actions']['adhoc-translate'] = [
+		$user = $sktemplate->getUser();
+		$title = $sktemplate->getTitle();
+
+		// Don't show on special pages or edit mode
+		if ( !$title->exists() || $title->isSpecialPage() ) {
+			return;
+		}
+
+		$text = $sktemplate->msg( 'geminitranslator-ca-translate' )->text();
+
+		if ( $user->isAnon() ) {
+			// Anon User: Link to Help Page
+			$helpTitle = Title::newFromText( 'Help:GeminiTranslator' );
+			$href = $helpTitle ? $helpTitle->getLinkURL() : '#';
+			
+			$links['actions']['gemini-translate'] = [
 				'class' => '',
-				'text' => $sktemplate->msg( 'adhoctranslation-ca-translate' )->plain(),
-				'href' => '#',
+				'text' => $text,
+				'href' => $href,
 				'position' => 30,
 			];
-		}
-	}
-
-	/**
-	 * @param Title $title
-	 * @param User $user
-	 * @return void
-	 */
-	private function assertCheck( Title $title, User $user ): void {
-		if ( $this->shouldTranslate === null ) {
-			$this->shouldTranslate = $this->pageTranslator->shouldTranslate( $user, $title );
+		} else {
+			// Logged In: JS Trigger
+			// We give it a specific ID that bootstrap.js looks for
+			$links['actions']['gemini-translate'] = [
+				'class' => '',
+				'text' => $text,
+				'href' => '#',
+				'id' => 'ca-gemini-translate', // JS hooks into this ID
+				'position' => 30,
+			];
 		}
 	}
 }
