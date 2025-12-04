@@ -154,4 +154,58 @@ class PageTranslator {
 		
 		// Import nodes to main document
 		foreach ( $tempDoc->getElementsByTagName('div')->item(0)->childNodes as $node ) {
-			$importedNode = $element->owner
+			$importedNode = $element->ownerDocument->importNode( $node, true );
+			$element->appendChild( $importedNode );
+		}
+	}
+
+	private function fetchFromDb( array $hashes, string $lang ): array {
+		if ( empty( $hashes ) ) {
+			return [];
+		}
+		
+		$dbr = $this->lb->getConnection( ILoadBalancer::DB_REPLICA );
+		$res = $dbr->select(
+			'gemini_translation_blocks',
+			[ 'gtb_source_hash', 'gtb_content' ],
+			[
+				'gtb_source_hash' => $hashes,
+				'gtb_lang' => $lang
+			],
+			__METHOD__
+		);
+
+		$data = [];
+		foreach ( $res as $row ) {
+			$data[$row->gtb_source_hash] = $row->gtb_content;
+		}
+		return $data;
+	}
+
+	private function saveToDb( array $translations, string $lang ): void {
+		if ( empty( $translations ) ) {
+			return;
+		}
+
+		$dbw = $this->lb->getConnection( ILoadBalancer::DB_PRIMARY );
+		$rows = [];
+		$now = $dbw->timestamp();
+
+		foreach ( $translations as $hash => $content ) {
+			$rows[] = [
+				'gtb_source_hash' => $hash,
+				'gtb_lang' => $lang,
+				'gtb_content' => $content,
+				'gtb_last_touched' => $now
+			];
+		}
+
+		// Insert ignore to handle race conditions if two users translate same page same time
+		$dbw->insert(
+			'gemini_translation_blocks',
+			$rows,
+			__METHOD__,
+			[ 'IGNORE' ]
+		);
+	}
+}
