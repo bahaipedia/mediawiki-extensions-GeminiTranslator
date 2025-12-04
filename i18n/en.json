@@ -1,18 +1,16 @@
 {
 	"@metadata": {
 		"authors": [
+			"Sarah Haslip",
 			"HalloWelt! GmbH"
 		]
-	},
-	"adhoctranslation-desc": "Live translation of page to user language",
-	"adhoctranslation-source-lang-not-supported": "Language code $1 is not supported as a source language",
-	"adhoctranslation-target-lang-not-supported": "Language code $1 is not supported as a target language",
-	"adhoctranslation-target-exists": "Page in target language already exists",
-	"adhoctranslation-same-lang": "Source and target languages are the same",
-	"adhoctranslation-ca-translate": "Translate to my language",
-	"adhoctranslation-ui-translating": "Translating...",
-	"adhoctranslation-ui-translated": "Content shown below was automatically translated",
-	"adhoctranslation-ui-error": "An error occurred while translating",
-	"adhoctranslation-ui-original": "Show original text",
-	"adhoctranslation-not-configured": "AdHocTranslation is not configured"
+},
+	"geminitranslator-desc": "AI-powered translation of page content using Gemini",
+	"geminitranslator-ca-translate": "Translate this page",
+	"geminitranslator-ui-translating": "Translating content...",
+	"geminitranslator-ui-translated": "The content below was automatically translated by Gemini.",
+	"geminitranslator-ui-error": "An error occurred while translating this section.",
+	"geminitranslator-ui-original": "Show original text",
+	"geminitranslator-error-no-api-key": "Gemini API key is missing or not configured.",
+	"geminitranslator-error-bad-response": "Received an invalid response from the Gemini API."
 }
