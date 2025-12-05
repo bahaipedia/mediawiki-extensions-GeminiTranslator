@@ -16,14 +16,9 @@ class GeminiClient {
 		$this->httpFactory = $httpFactory;
 	}
 
-	/**
-	 * Translates an array of text blocks.
-	 * @param array $blocks Array of strings (HTML/Text) to translate
-	 * @param string $targetLang
-	 * @return StatusValue Returns [ 'original_index' => 'translated_text' ]
-	 */
 	public function translateBlocks( array $blocks, string $targetLang ): StatusValue {
 		if ( empty( $this->apiKey ) ) {
+			error_log("GEMINI CLIENT: No API Key configured.");
 			return StatusValue::newFatal( 'geminitranslator-error-no-api-key' );
 		}
 
@@ -31,42 +26,43 @@ class GeminiClient {
 			return StatusValue::newGood( [] );
 		}
 
-		// Prepare the Prompt
+		// LOGGING
+		error_log("GEMINI CLIENT: Sending " . count($blocks) . " blocks to translate into '$targetLang'.");
+
 		$promptParts = [];
-		$promptParts[] = "You are a professional translator for an encyclopedia. Translate the following HTML blocks into language code '{$targetLang}'.";
-		$promptParts[] = "Maintain all HTML tags, classes, and structure exactly. Only translate the human-readable text content.";
-		$promptParts[] = "Return the response strictly as a JSON array of strings. Do not include markdown formatting (like ```json).";
-		$promptParts[] = "Input Blocks:";
+		$promptParts[] = "You are a professional translator. Translate the following array of text strings into language code '{$targetLang}'.";
+		$promptParts[] = "Do not translate proper nouns or technical terms if inappropriate.";
+		$promptParts[] = "Return ONLY a JSON array of strings. No markdown formatting.";
+		$promptParts[] = "Input:";
 		$promptParts[] = json_encode( $blocks );
 
-		$url = "[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){$this->model}:generateContent?key={$this->apiKey}";
+		$url = "https://generativelanguage.googleapis.com/v1beta/models/{$this->model}:generateContent?key={$this->apiKey}";
 		
 		$payload = [
 			'contents' => [
-				[
-					'parts' => [
-						[ 'text' => implode( "\n", $promptParts ) ]
-					]
-				]
+				[ 'parts' => [ [ 'text' => implode( "\n", $promptParts ) ] ] ]
 			]
 		];
 
 		$req = $this->httpFactory->create( $url, [ 'method' => 'POST', 'postData' => json_encode( $payload ) ], __METHOD__ );
-		$req->setHeader( 'Content-Type', 'application/json' );
 		
-		// CRITICAL FIX: Send a Referer header to satisfy Google API Key "Website Restrictions"
-		// Since this runs on the server, we manually set it to a domain allowed by your key.
-		// Using the base domain allows it to work across all subdomains (es., de., etc).
-		$req->setHeader( 'Referer', '[https://bahaipedia.org/](https://bahaipedia.org/)' );
+		$req->setHeader( 'Content-Type', 'application/json' );
+		$req->setHeader( 'Referer', 'https://bahaipedia.org/' );
 
 		$status = $req->execute();
 
 		if ( !$status->isOK() ) {
-			// Return the actual error from Google for debugging
+			error_log("GEMINI CLIENT: HTTP Error: " . print_r($status->getErrors(), true));
 			return StatusValue::newFatal( 'geminitranslator-ui-error', $status->getErrors() );
 		}
 
 		$result = json_decode( $req->getContent(), true );
+		
+		// Check for API errors (like 400/403 inside the JSON)
+		if ( isset( $result['error'] ) ) {
+			error_log("GEMINI CLIENT: API Error: " . print_r($result['error'], true));
+			return StatusValue::newFatal( 'geminitranslator-ui-error' );
+		}
 		
 		if ( isset( $result['candidates'][0]['content']['parts'][0]['text'] ) ) {
 			$rawText = $result['candidates'][0]['content']['parts'][0]['text'];
@@ -74,8 +70,13 @@ class GeminiClient {
 			$translatedBlocks = json_decode( trim( $rawText ), true );
 
 			if ( json_last_error() === JSON_ERROR_NONE && is_array( $translatedBlocks ) ) {
+				error_log("GEMINI CLIENT: Success! Received " . count($translatedBlocks) . " strings.");
 				return StatusValue::newGood( $translatedBlocks );
+			} else {
+				error_log("GEMINI CLIENT: JSON Decode Error on response: " . substr($rawText, 0, 100) . "...");
 			}
+		} else {
+			error_log("GEMINI CLIENT: Unexpected response structure: " . substr($req->getContent(), 0, 200));
 		}
 
 		return StatusValue::newFatal( 'geminitranslator-error-bad-response' );
