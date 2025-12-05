@@ -22,44 +22,51 @@ class VirtualPageDisplay implements BeforeInitializeHook {
 	}
 
 	public function onBeforeInitialize( $title, $article, $output, $user, $request, $mediaWiki ): void {
+		$text = $title->getText();
+		error_log( "GEMINI HOOK: Checking page '$text'" );
+
 		// 1. Only run in Main Namespace (0)
 		if ( $title->getNamespace() !== NS_MAIN ) {
+			error_log( "GEMINI HOOK: Skipping - Not in Main Namespace (" . $title->getNamespace() . ")" );
 			return;
 		}
 
 		// 2. If the page actually exists, let MediaWiki handle it.
 		if ( $title->exists() ) {
+			error_log( "GEMINI HOOK: Skipping - Page actually exists" );
 			return;
 		}
 
-		// 3. Manual Subpage Detection (Fixes the issue if wgNamespacesWithSubpages is off)
-		$text = $title->getText();
+		// 3. Manual Subpage Detection
 		$lastSlash = strrpos( $text, '/' );
-		
 		if ( $lastSlash === false ) {
-			return; // No slash found
+			error_log( "GEMINI HOOK: Skipping - No slash found in title" );
+			return; 
 		}
 
-		// Extract parts based on string position
+		// Extract parts
 		$baseText = substr( $text, 0, $lastSlash );
 		$langCode = substr( $text, $lastSlash + 1 );
+		error_log( "GEMINI HOOK: Base: '$baseText', Lang: '$langCode'" );
 
-		// 4. Validate Language Code (2-3 chars, or specific variants)
-		// We accept 2 chars (en, es), 3 chars (ast), or specific dashed codes (pt-br)
+		// 4. Validate Language Code
 		$len = strlen( $langCode );
 		$isValidLang = ( $len >= 2 && $len <= 3 ) || in_array( strtolower($langCode), [ 'zh-cn', 'zh-tw', 'pt-br' ] );
 		
 		if ( !$isValidLang ) {
+			error_log( "GEMINI HOOK: Skipping - Invalid lang code" );
 			return;
 		}
 
 		// 5. Check if Parent exists
-		// We create a Title object for the text "before the slash"
 		$parentTitle = Title::newFromText( $baseText );
 		
 		if ( !$parentTitle || !$parentTitle->exists() ) {
+			error_log( "GEMINI HOOK: Skipping - Parent '$baseText' does not exist" );
 			return;
 		}
+
+		error_log( "GEMINI HOOK: MATCH! Hijacking display..." );
 
 		// 6. Hijack the Display
 		$this->renderVirtualPage( $output, $parentTitle, $langCode, $title );
@@ -67,31 +74,36 @@ class VirtualPageDisplay implements BeforeInitializeHook {
 
 	private function renderVirtualPage( OutputPage $output, Title $parent, string $lang, Title $fullTitle ): void {
 		$output->setPageTitle( $fullTitle->getText() );
-		$output->setArticleFlag( false ); // Suppress "missing article" error
+		$output->setArticleFlag( false ); 
 		$output->addBodyClasses( 'gemini-virtual-page' );
 		$output->addModules( [ 'ext.geminitranslator.bootstrap' ] );
 
 		// 1. Get Parent Revision
 		$rev = $this->revisionLookup->getRevisionByTitle( $parent );
-		if ( !$rev ) { return; }
+		if ( !$rev ) { 
+			error_log( "GEMINI HOOK: Parent has no revision?" );
+			return; 
+		}
+		error_log( "GEMINI HOOK: Parent Rev ID: " . $rev->getId() );
 
 		// 2. Parse Lead Section (Section 0)
 		$content = $rev->getContent( 'main' );
-		// Defensive check: getContent might return null if something is corrupt
 		$section0 = $content ? $content->getSection( 0 ) : null;
 		
 		$skeletonHtml = '';
 		if ( $section0 ) {
+			error_log( "GEMINI HOOK: Parsing Section 0..." );
 			$services = MediaWikiServices::getInstance();
 			$parser = $services->getParser();
-			// Use global context options
 			$popts = ParserOptions::newFromContext( RequestContext::getMain() );
 			
 			$parseOut = $parser->parse( $section0->getText(), $parent, $popts, true );
 			
-			// Transform to Skeleton
 			$builder = $services->getService( 'GeminiTranslator.SkeletonBuilder' );
 			$skeletonHtml = $builder->createSkeleton( $parseOut->getText() );
+			error_log( "GEMINI HOOK: Skeleton HTML length: " . strlen($skeletonHtml) );
+		} else {
+			error_log( "GEMINI HOOK: Section 0 not found" );
 		}
 
 		// 3. Output HTML
@@ -99,29 +111,25 @@ class VirtualPageDisplay implements BeforeInitializeHook {
 		$html .= '<div class="mw-message-box mw-message-box-notice">';
 		$html .= '<strong>Translated Content:</strong> This page is a real-time translation of <a href="' . $parent->getLinkURL() . '">' . $parent->getText() . '</a>.';
 		$html .= '</div>';
-		
 		$html .= '<div id="gemini-virtual-content" style="margin-top: 20px;">';
 		
-		// If skeleton is empty (e.g. empty page), show default loader
 		if ( empty( $skeletonHtml ) ) {
 			$html .= '<div class="gemini-loading">Loading...</div>';
 		} else {
 			$html .= $skeletonHtml;
 		}
 		
-		$html .= '</div>'; // End content
-		$html .= '</div>'; // End container
+		$html .= '</div></div>';
 
 		$output->addHTML( $html );
 		
-		// Pass vars to JS for lazy loading the rest
 		$output->addJsConfigVars( [
 			'wgGeminiParentRevId' => $rev->getId(),
 			'wgGeminiTargetLang' => $lang
 		] );
 
-		// Force the action to 'view' to prevent "Create Page" editor
 		$request = $output->getRequest();
 		$request->setVal( 'action', 'view' );
+		error_log( "GEMINI HOOK: Output injected." );
 	}
 }
