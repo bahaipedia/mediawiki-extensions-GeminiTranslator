@@ -71,6 +71,13 @@
 		"services": [
 			"RevisionLookup", "GeminiTranslator.PageTranslator"
 		]
+	}, {
+		"method": "POST",
+		"path": "/gemini-translator/translate_batch",
+		"class": "MediaWiki\\Extension\\GeminiTranslator\\Rest\\BatchTranslateHandler",
+		"services": [
+			"GeminiTranslator.PageTranslator"
+		]
 	} ],
 	"ServiceWiringFiles": [
 		"includes/ServiceWiring.php"
