@@ -15,16 +15,27 @@ class BatchTranslateHandler extends SimpleHandler {
 	}
 
 	public function execute() {
+		error_log("GEMINI CRASH TRACE: 1. Entered BatchTranslateHandler");
+
 		$body = $this->getValidatedBody();
-		$strings = $body['strings'];
+		$strings = $body['strings'] ?? [];
 		$targetLang = $body['targetLang'];
 
-		// Limit batch size for safety
+		error_log("GEMINI CRASH TRACE: 2. Body parsed. Strings count: " . count($strings));
+
+		// Limit batch size just in case
 		if ( count( $strings ) > 50 ) {
 			$strings = array_slice( $strings, 0, 50 );
 		}
 
+		// Check for encoding issues
+		if ( json_last_error() !== JSON_ERROR_NONE ) {
+			error_log("GEMINI CRASH TRACE: JSON Error in request body: " . json_last_error_msg());
+		}
+
+		error_log("GEMINI CRASH TRACE: 3. Calling translateStrings...");
 		$translations = $this->translator->translateStrings( $strings, $targetLang );
+		error_log("GEMINI CRASH TRACE: 8. Returned from translateStrings");
 
 		return $this->getResponseFactory()->createJson( [
 			'translations' => $translations
