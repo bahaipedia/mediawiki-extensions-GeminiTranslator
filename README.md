@@ -1,3 +1,3 @@
-# AdhocTranslation
+# GeminiTranslator
 
 ## Basic configuration
