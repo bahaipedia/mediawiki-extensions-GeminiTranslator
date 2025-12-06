@@ -20,7 +20,6 @@ class GeminiClient {
 
 	public function translateBlocks( array $blocks, string $targetLang ): StatusValue {
 		if ( empty( $this->apiKey ) ) {
-			error_log("GEMINI CLIENT: No API Key configured.");
 			return StatusValue::newFatal( 'geminitranslator-error-no-api-key' );
 		}
 
@@ -28,42 +27,51 @@ class GeminiClient {
 			return StatusValue::newGood( [] );
 		}
 
-		error_log("GEMINI CLIENT: Sending " . count($blocks) . " blocks to translate into '$targetLang'.");
+		// 1. Prepare Referer (Ensure Protocol Exists)
+		$referer = $this->serverUrl;
+		if ( strpos( $referer, '//' ) === 0 ) {
+			$referer = 'https:' . $referer;
+		}
+		$referer = rtrim( $referer, '/' ) . '/'; // Ensure trailing slash
 
+		// 2. Prepare Payload
 		$promptParts = [];
 		$promptParts[] = "You are a professional translator. Translate the following array of text strings into language code '{$targetLang}'.";
 		$promptParts[] = "Do not translate proper nouns or technical terms if inappropriate.";
 		$promptParts[] = "Return ONLY a JSON array of strings. No markdown formatting.";
 		$promptParts[] = "Input:";
-		$promptParts[] = json_encode( $blocks );
+		// Use UNESCAPED_UNICODE to keep characters readable and payload smaller
+		$promptParts[] = json_encode( $blocks, JSON_UNESCAPED_UNICODE );
 
 		$url = "https://generativelanguage.googleapis.com/v1beta/models/{$this->model}:generateContent?key={$this->apiKey}";
 		
-		$payload = [
+		$payloadData = [
 			'contents' => [
 				[ 'parts' => [ [ 'text' => implode( "\n", $promptParts ) ] ] ]
 			]
 		];
 
-		$req = $this->httpFactory->create( $url, [ 'method' => 'POST', 'postData' => json_encode( $payload ) ], __METHOD__ );
+		$jsonBody = json_encode( $payloadData, JSON_UNESCAPED_UNICODE );
+
+		// DEBUG: Log the exact payload to compare with Curl if needed
+		error_log( "GEMINI PAYLOAD (Partial): " . substr( $jsonBody, 0, 500 ) . "..." );
+
+		$req = $this->httpFactory->create( $url, [ 'method' => 'POST', 'postData' => $jsonBody ], __METHOD__ );
 		
 		$req->setHeader( 'Content-Type', 'application/json' );
-		
-		// DYNAMIC REFERER: Uses the actual wiki URL (e.g., https://vi.bahaipedia.org)
-		// This ensures it matches the *.bahaipedia.org restriction.
-		$req->setHeader( 'Referer', $this->serverUrl . '/' );
+		$req->setHeader( 'Referer', $referer );
 
 		$status = $req->execute();
 
 		if ( !$status->isOK() ) {
-			error_log("GEMINI CLIENT: HTTP Error: " . print_r($status->getErrors(), true));
+			error_log( "GEMINI CLIENT: HTTP Error " . $status->getErrors()[0]['message'] ?? 'Unknown' );
 			return StatusValue::newFatal( 'geminitranslator-ui-error', $status->getErrors() );
 		}
 
 		$result = json_decode( $req->getContent(), true );
 		
 		if ( isset( $result['error'] ) ) {
-			error_log("GEMINI CLIENT: API Error: " . print_r($result['error'], true));
+			error_log( "GEMINI CLIENT: API Error: " . print_r( $result['error'], true ) );
 			return StatusValue::newFatal( 'geminitranslator-ui-error' );
 		}
 		
@@ -73,13 +81,10 @@ class GeminiClient {
 			$translatedBlocks = json_decode( trim( $rawText ), true );
 
 			if ( json_last_error() === JSON_ERROR_NONE && is_array( $translatedBlocks ) ) {
-				error_log("GEMINI CLIENT: Success! Received " . count($translatedBlocks) . " strings.");
 				return StatusValue::newGood( $translatedBlocks );
 			} else {
-				error_log("GEMINI CLIENT: JSON Decode Error: " . substr($rawText, 0, 100) . "...");
+				error_log( "GEMINI CLIENT: JSON Decode Error: " . substr( $rawText, 0, 100 ) );
 			}
-		} else {
-			error_log("GEMINI CLIENT: Unexpected response structure.");
 		}
 
 		return StatusValue::newFatal( 'geminitranslator-error-bad-response' );
