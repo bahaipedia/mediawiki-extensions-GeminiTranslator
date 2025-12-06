@@ -11,7 +11,8 @@ return [
 		return new GeminiClient(
 			$config->get( 'GeminiApiKey' ),
 			$config->get( 'GeminiModel' ),
-			$services->getHttpRequestFactory()
+			$services->getHttpRequestFactory(),
+			$config->get( 'Server' )
 		);
 	},
 
@@ -23,7 +24,6 @@ return [
 		);
 	},
 
-	// NEW SERVICE
 	'GeminiTranslator.SkeletonBuilder' => static function ( MediaWikiServices $services ) {
 		return new SkeletonBuilder();
 	},
