@@ -26,6 +26,69 @@ class PageTranslator {
 	}
 
 	/**
+	 * Translates an array of raw strings using DB cache + API
+	 * @param array $strings List of strings to translate
+	 * @param string $targetLang
+	 * @return array Map of [ original_string => translated_string ]
+	 */
+	public function translateStrings( array $strings, string $targetLang ): array {
+		if ( empty( $strings ) ) {
+			return [];
+		}
+
+		$hashes = [];
+		$mapHashToContent = [];
+
+		foreach ( $strings as $text ) {
+			$hash = hash( 'sha256', trim( $text ) );
+			$hashes[] = $hash;
+			$mapHashToContent[$hash] = $text;
+		}
+
+		// 1. Check DB
+		$cached = $this->fetchFromDb( array_unique( $hashes ), $targetLang );
+
+		// 2. Identify Misses
+		$toTranslate = [];
+		foreach ( $mapHashToContent as $hash => $text ) {
+			if ( !isset( $cached[$hash] ) ) {
+				if ( !isset( $toTranslate[$hash] ) ) {
+					$toTranslate[$hash] = $text;
+				}
+			}
+		}
+
+		// 3. Call API for misses
+		if ( !empty( $toTranslate ) ) {
+			$apiInput = array_values( $toTranslate );
+			$apiStatus = $this->client->translateBlocks( $apiInput, $targetLang );
+
+			if ( $apiStatus->isOK() ) {
+				$results = $apiStatus->getValue();
+				$keys = array_keys( $toTranslate );
+				$newRows = [];
+
+				foreach ( $results as $i => $translatedText ) {
+					if ( isset( $keys[$i] ) ) {
+						$h = $keys[$i];
+						$cached[$h] = $translatedText;
+						$newRows[$h] = $translatedText;
+					}
+				}
+				$this->saveToDb( $newRows, $targetLang );
+			}
+		}
+
+		$finalResults = [];
+		foreach ( $strings as $text ) {
+			$h = hash( 'sha256', trim( $text ) );
+			$finalResults[$text] = $cached[$h] ?? $text;
+		}
+
+		return $finalResults;
+	}
+
+	/**
 	 * Main entry point: Takes raw HTML, translates text nodes, preserves structure.
 	 * * @param string $html The HTML fragment or page content
 	 * @param string $targetLang
@@ -124,78 +187,6 @@ class PageTranslator {
 		}
 
 		return StatusValue::newGood( $dom->saveHTML() );
-	}
-
-	/**
-	 * Translates an array of raw strings using DB cache + API
-	 * @param array $strings List of strings to translate
-	 * @param string $targetLang
-	 * @return array Map of [ original_string => translated_string ]
-	 */
-	public function translateStrings( array $strings, string $targetLang ): array {
-		error_log("GEMINI CRASH TRACE: 4. Inside translateStrings");
-		
-		if ( empty( $strings ) ) {
-			return [];
-		}
-
-		$hashes = [];
-		$mapHashToContent = [];
-
-		foreach ( $strings as $text ) {
-			$hash = hash( 'sha256', trim( $text ) );
-			$hashes[] = $hash;
-			$mapHashToContent[$hash] = $text;
-		}
-
-		error_log("GEMINI CRASH TRACE: 5. Hashes calculated");
-
-		// 1. Check DB
-		$cached = $this->fetchFromDb( array_unique( $hashes ), $targetLang );
-
-		// 2. Identify Misses
-		$toTranslate = [];
-		foreach ( $mapHashToContent as $hash => $text ) {
-			if ( !isset( $cached[$hash] ) ) {
-				if ( !isset( $toTranslate[$hash] ) ) {
-					$toTranslate[$hash] = $text;
-				}
-			}
-		}
-
-		error_log("GEMINI CRASH TRACE: 6. Cache checked. Missing count: " . count($toTranslate));
-
-		// 3. Call API for misses
-		if ( !empty( $toTranslate ) ) {
-			$apiInput = array_values( $toTranslate );
-			
-			error_log("GEMINI CRASH TRACE: 7. Calling Client->translateBlocks...");
-			$apiStatus = $this->client->translateBlocks( $apiInput, $targetLang );
-			error_log("GEMINI CRASH TRACE: 7b. Client returned."); // If we don't see this, Client crashed
-
-			if ( $apiStatus->isOK() ) {
-				$results = $apiStatus->getValue();
-				$keys = array_keys( $toTranslate );
-				$newRows = [];
-
-				foreach ( $results as $i => $translatedText ) {
-					if ( isset( $keys[$i] ) ) {
-						$h = $keys[$i];
-						$cached[$h] = $translatedText;
-						$newRows[$h] = $translatedText;
-					}
-				}
-				$this->saveToDb( $newRows, $targetLang );
-			}
-		}
-
-		$finalResults = [];
-		foreach ( $strings as $text ) {
-			$h = hash( 'sha256', trim( $text ) );
-			$finalResults[$text] = $cached[$h] ?? $text;
-		}
-
-		return $finalResults;
 	}
 
 	/**
