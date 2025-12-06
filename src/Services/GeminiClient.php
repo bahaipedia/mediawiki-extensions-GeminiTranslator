@@ -27,12 +27,12 @@ class GeminiClient {
 			return StatusValue::newGood( [] );
 		}
 
-		// 1. Prepare Referer (Ensure Protocol Exists)
+		// 1. Prepare Referer
 		$referer = $this->serverUrl;
 		if ( strpos( $referer, '//' ) === 0 ) {
 			$referer = 'https:' . $referer;
 		}
-		$referer = rtrim( $referer, '/' ) . '/'; // Ensure trailing slash
+		$referer = rtrim( $referer, '/' ) . '/';
 
 		// 2. Prepare Payload
 		$promptParts = [];
@@ -40,7 +40,6 @@ class GeminiClient {
 		$promptParts[] = "Do not translate proper nouns or technical terms if inappropriate.";
 		$promptParts[] = "Return ONLY a JSON array of strings. No markdown formatting.";
 		$promptParts[] = "Input:";
-		// Use UNESCAPED_UNICODE to keep characters readable and payload smaller
 		$promptParts[] = json_encode( $blocks, JSON_UNESCAPED_UNICODE );
 
 		$url = "https://generativelanguage.googleapis.com/v1beta/models/{$this->model}:generateContent?key={$this->apiKey}";
@@ -53,10 +52,12 @@ class GeminiClient {
 
 		$jsonBody = json_encode( $payloadData, JSON_UNESCAPED_UNICODE );
 
-		// DEBUG: Log the exact payload to compare with Curl if needed
-		error_log( "GEMINI PAYLOAD (Partial): " . substr( $jsonBody, 0, 500 ) . "..." );
-
-		$req = $this->httpFactory->create( $url, [ 'method' => 'POST', 'postData' => $jsonBody ], __METHOD__ );
+		// Increase timeout to 120 seconds to prevent 503 errors on large batches
+		$req = $this->httpFactory->create( $url, [ 
+			'method' => 'POST', 
+			'postData' => $jsonBody,
+			'timeout' => 120
+		], __METHOD__ );
 		
 		$req->setHeader( 'Content-Type', 'application/json' );
 		$req->setHeader( 'Referer', $referer );
@@ -64,7 +65,7 @@ class GeminiClient {
 		$status = $req->execute();
 
 		if ( !$status->isOK() ) {
-			error_log( "GEMINI CLIENT: HTTP Error " . $status->getErrors()[0]['message'] ?? 'Unknown' );
+			error_log( "GEMINI CLIENT: HTTP Error " . ($status->getErrors()[0]['message'] ?? 'Unknown') );
 			return StatusValue::newFatal( 'geminitranslator-ui-error', $status->getErrors() );
 		}
 
