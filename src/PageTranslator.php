@@ -26,6 +26,38 @@ class PageTranslator {
 	}
 
 	/**
+	 * Checks the database for existing translations (No API call)
+	 * @param array $strings List of source strings
+	 * @param string $targetLang
+	 * @return array Map of [ source_string => translated_string ] (only for hits)
+	 */
+	public function getCachedTranslations( array $strings, string $targetLang ): array {
+		if ( empty( $strings ) ) {
+			return [];
+		}
+
+		$hashes = [];
+		$mapHashToContent = [];
+
+		foreach ( $strings as $text ) {
+			$hash = hash( 'sha256', trim( $text ) );
+			$hashes[] = $hash;
+			$mapHashToContent[$hash] = $text;
+		}
+
+		$cached = $this->fetchFromDb( array_unique( $hashes ), $targetLang );
+
+		$results = [];
+		foreach ( $mapHashToContent as $hash => $text ) {
+			if ( isset( $cached[$hash] ) ) {
+				$results[$text] = $cached[$hash];
+			}
+		}
+
+		return $results;
+	}
+
+	/**
 	 * Translates an array of raw strings using DB cache + API
 	 * @param array $strings List of strings to translate
 	 * @param string $targetLang
