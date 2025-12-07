@@ -31,6 +31,9 @@
 			"scripts": [
 				"bootstrap.js"
 			],
+			"styles": [
+				"gemini.css"
+			],
 			"messages": [
 				"geminitranslator-ui-translating",
 				"geminitranslator-ui-translated",
