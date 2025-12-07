@@ -32,7 +32,7 @@
 				"bootstrap.js"
 			],
 			"styles": [
-				"gemini.css"
+				"resources/gemini.css"
 			],
 			"messages": [
 				"geminitranslator-ui-translating",
