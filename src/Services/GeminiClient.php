@@ -26,6 +26,17 @@ class GeminiClient {
 		if ( empty( $blocks ) ) {
 			return StatusValue::newGood( [] );
 		}
+		
+		$totalChars = 0;
+		foreach( $blocks as $b ) { $totalChars += strlen($b); }
+		
+		wfDebugLog( 'GeminiTranslator', sprintf(
+			"API-REQ: Lang=%s | Blocks=%d | ApproxChars=%d | Referer=%s",
+			$targetLang,
+			count($blocks),
+			$totalChars,
+			$referer
+		));
 
 		// 1. Prepare Referer
 		$referer = $this->serverUrl;
