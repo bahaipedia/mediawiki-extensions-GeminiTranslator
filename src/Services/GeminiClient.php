@@ -27,6 +27,14 @@ class GeminiClient {
 			return StatusValue::newGood( [] );
 		}
 		
+		// 1. Prepare Referer (MOVED UP)
+		$referer = $this->serverUrl;
+		if ( strpos( $referer, '//' ) === 0 ) {
+			$referer = 'https:' . $referer;
+		}
+		$referer = rtrim( $referer, '/' ) . '/';
+
+		// 2. Logging
 		$totalChars = 0;
 		foreach( $blocks as $b ) { $totalChars += strlen($b); }
 		
@@ -38,14 +46,7 @@ class GeminiClient {
 			$referer
 		));
 
-		// 1. Prepare Referer
-		$referer = $this->serverUrl;
-		if ( strpos( $referer, '//' ) === 0 ) {
-			$referer = 'https:' . $referer;
-		}
-		$referer = rtrim( $referer, '/' ) . '/';
-
-		// 2. Prepare Payload
+		// 3. Prepare Payload
 		$promptParts = [];
 		$promptParts[] = "You are a professional translator. Translate the following array of text strings into language code '{$targetLang}'.";
 		$promptParts[] = "Do not translate proper nouns or technical terms if inappropriate.";
