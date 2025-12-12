@@ -86,38 +86,44 @@ class VirtualPageDisplay implements BeforeInitializeHook {
 			return; 
 		}
 		error_log( "GEMINI HOOK: Parent Rev ID: " . $rev->getId() );
-
-		// 2. Parse Full Content
-		// We use 'main' slot which contains the whole page wikitext
-		$content = $rev->getContent( 'main' );
 		
+		// CHECK PERMISSIONS
+		$user = RequestContext::getMain()->getUser();
+		$isAnon = !$user->isNamed();
+
+		// PARSE FULL PAGE
+		$content = $rev->getContent( 'main' );
 		$skeletonHtml = '';
 		if ( $content ) {
 			$services = MediaWikiServices::getInstance();
 			$parser = $services->getParser();
 			$popts = ParserOptions::newFromContext( RequestContext::getMain() );
 			
-			// PARSE FULL PAGE
 			$parseOut = $parser->parse( $content->getText(), $parent, $popts, true );
 			
-			// Transform to Skeleton (passing language code for cache lookup)
 			$builder = $services->getService( 'GeminiTranslator.SkeletonBuilder' );
-			$skeletonHtml = $builder->createSkeleton( $parseOut->getText(), $lang );
+			
+			// PASS READ-ONLY STATUS
+			$skeletonHtml = $builder->createSkeleton( $parseOut->getText(), $lang, $isAnon );
 		}
 
-		// 3. Output HTML
+		// OUTPUT HTML
 		$html = '<div class="gemini-virtual-container">';
-		$html .= '<div class="mw-message-box mw-message-box-notice">';
-		$html .= '<strong>Translated Content:</strong> This page is a real-time translation of <a href="' . $parent->getLinkURL() . '">' . $parent->getText() . '</a>.';
-		$html .= '</div>';
-		$html .= '<div id="gemini-virtual-content" style="margin-top: 20px;">';
 		
-		if ( empty( $skeletonHtml ) ) {
-			$html .= '<div class="gemini-loading">Loading...</div>';
+		if ( $isAnon ) {
+			// Show Warning for Anons
+			$html .= '<div class="mw-message-box mw-message-box-warning">';
+			$html .= '<strong>Login Required:</strong> You are viewing a cached translation. New translations are disabled for anonymous users. <a href="/Special:UserLogin">Log in</a> to translate the rest of this page.';
+			$html .= '</div>';
 		} else {
-			$html .= $skeletonHtml;
+			// Standard Notice for Users
+			$html .= '<div class="mw-message-box mw-message-box-notice">';
+			$html .= '<strong>Translated Content:</strong> This page is a real-time translation of <a href="' . $parent->getLinkURL() . '">' . $parent->getText() . '</a>.';
+			$html .= '</div>';
 		}
 		
+		$html .= '<div id="gemini-virtual-content" style="margin-top: 20px;">';
+		$html .= $skeletonHtml;
 		$html .= '</div></div>';
 
 		$output->addHTML( $html );
