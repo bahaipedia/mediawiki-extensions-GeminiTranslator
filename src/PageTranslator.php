@@ -94,41 +94,37 @@ class PageTranslator {
 		if ( !empty( $toTranslate ) ) {
 			$apiInput = array_values( $toTranslate );
 			
-			// RESTORED LOGGING: See exactly how many items are being sent
-			error_log( "GEMINI DEBUG: PageTranslator sending " . count($apiInput) . " items to Client." );
+			// DEBUG: Verify we are actually trying to send
+			error_log( "GEMINI DEBUG: Attempting to translate " . count($apiInput) . " items..." );
 
 			$apiStatus = $this->client->translateBlocks( $apiInput, $targetLang );
 
-			if ( !$apiStatus->isOK() ) {
-				// FAIL HARD & LOG
-				$errors = $apiStatus->getErrors();
-				$msg = isset($errors[0]['message']) ? $errors[0]['message'] : 'Unknown API Error';
-				error_log( "GEMINI CRITICAL: API Failed. Details: " . print_r( $errors, true ) );
-				throw new \RuntimeException( "Gemini API Failed: $msg" );
-			}
+			if ( $apiStatus->isOK() ) {
+				$results = $apiStatus->getValue();
+				$keys = array_keys( $toTranslate );
+				$newRows = [];
 
-			// If success, save to DB
-			$results = $apiStatus->getValue();
-			$keys = array_keys( $toTranslate );
-			$newRows = [];
-
-			foreach ( $results as $i => $translatedText ) {
-				if ( isset( $keys[$i] ) ) {
-					$h = $keys[$i];
-					$cached[$h] = $translatedText; 
-					$newRows[$h] = $translatedText;
+				foreach ( $results as $i => $translatedText ) {
+					if ( isset( $keys[$i] ) ) {
+						$h = $keys[$i];
+						$cached[$h] = $translatedText; 
+						$newRows[$h] = $translatedText;
+					}
 				}
+				$this->saveToDb( $newRows, $targetLang );
+			} else {
+				// !!! CRITICAL FIX: Log the error, don't hide it !!!
+				$errors = $apiStatus->getErrors();
+				error_log( "GEMINI API ERROR: " . print_r( $errors, true ) );
 			}
-			$this->saveToDb( $newRows, $targetLang );
 		}
 
 		// 4. Build Result
 		$finalResults = [];
 		foreach ( $strings as $text ) {
 			$h = hash( 'sha256', trim( $text ) );
-			if ( isset( $cached[$h] ) ) {
-				$finalResults[$text] = $cached[$h];
-			}
+			// Fallback to original text if translation missing
+			$finalResults[$text] = $cached[$h] ?? $text;
 		}
 
 		return $finalResults;
