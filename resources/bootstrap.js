@@ -27,16 +27,16 @@ console.log('Gemini: Loaded v13 bootstrap.js');
     }
     OO.inheritClass( GeminiDialog, OO.ui.ProcessDialog );
     GeminiDialog.static.name = 'geminiDialog';
-    GeminiDialog.static.title = 'Translate Page';
+    GeminiDialog.static.title = mw.msg( 'geminitranslator-dialog-title' );
     GeminiDialog.static.actions = [
-        { action: 'go', label: 'Go', flags: 'primary' },
-        { action: 'cancel', label: 'Cancel', flags: 'safe' }
+        { action: 'go', label: mw.msg( 'geminitranslator-dialog-go' ), flags: 'primary' },
+        { action: 'cancel', label: mw.msg( 'geminitranslator-dialog-cancel' ), flags: 'safe' }
     ];
     GeminiDialog.prototype.initialize = function () {
         GeminiDialog.super.prototype.initialize.call( this );
         this.panel = new OO.ui.PanelLayout( { padded: true, expanded: false } );
         this.langInput = new OO.ui.TextInputWidget( { placeholder: 'es', value: 'es' } );
-        this.panel.$element.append( $( '<p>' ).text( 'Enter target language code:' ), this.langInput.$element );
+        this.panel.$element.append( $( '<p>' ).text( mw.msg( 'geminitranslator-dialog-prompt' ) ), this.langInput.$element );
         this.$body.append( this.panel.$element );
     };
     GeminiDialog.prototype.getActionProcess = function ( action ) {
