@@ -34,11 +34,7 @@ class GeminiClient {
 		}
 		$referer = rtrim( $referer, '/' ) . '/';
 
-		// 2. Logging - USE ERROR_LOG INSTEAD OF WFDEBUGLOG FOR NOW
-		// This prints to /var/log/php8.3-fpm.log so you can actually see it
-		error_log( sprintf( "GEMINI DEBUG: Sending %d blocks to %s. Referer: %s", count($blocks), $targetLang, $referer ) );
-
-		// 3. Prepare Payload
+		// 2. Prepare Payload
 		$promptParts = [];
 		$promptParts[] = "You are a professional translator. Translate the following array of text strings into language code '{$targetLang}'.";
 		$promptParts[] = "Do not translate proper nouns or technical terms if inappropriate.";
@@ -56,6 +52,7 @@ class GeminiClient {
 
 		$jsonBody = json_encode( $payloadData, JSON_UNESCAPED_UNICODE );
 
+		// Increase timeout to 120 seconds to prevent 503 errors on large batches
 		$req = $this->httpFactory->create( $url, [ 
 			'method' => 'POST', 
 			'postData' => $jsonBody,
@@ -68,17 +65,14 @@ class GeminiClient {
 		$status = $req->execute();
 
 		if ( !$status->isOK() ) {
-			// LOG THE HTTP ERROR
-			$msg = $status->getErrors()[0]['message'] ?? 'Unknown';
-			error_log( "GEMINI HTTP ERROR: $msg" );
+			error_log( "GEMINI CLIENT: HTTP Error " . ($status->getErrors()[0]['message'] ?? 'Unknown') );
 			return StatusValue::newFatal( 'geminitranslator-ui-error', $status->getErrors() );
 		}
 
 		$result = json_decode( $req->getContent(), true );
 		
 		if ( isset( $result['error'] ) ) {
-			// LOG THE API ERROR
-			error_log( "GEMINI API ERROR: " . print_r( $result['error'], true ) );
+			error_log( "GEMINI CLIENT: API Error: " . print_r( $result['error'], true ) );
 			return StatusValue::newFatal( 'geminitranslator-ui-error' );
 		}
 		
@@ -90,7 +84,7 @@ class GeminiClient {
 			if ( json_last_error() === JSON_ERROR_NONE && is_array( $translatedBlocks ) ) {
 				return StatusValue::newGood( $translatedBlocks );
 			} else {
-				error_log( "GEMINI DECODE ERROR: " . substr( $rawText, 0, 100 ) );
+				error_log( "GEMINI CLIENT: JSON Decode Error: " . substr( $rawText, 0, 100 ) );
 			}
 		}
 
