@@ -22,23 +22,38 @@ class VirtualPageDisplay implements BeforeInitializeHook {
 	}
 
 	public function onBeforeInitialize( $title, $article, $output, $user, $request, $mediaWiki ): void {
+		// LOGGING: Check every page load in Main namespace
 		if ( $title->getNamespace() !== NS_MAIN ) { return; }
-		if ( $title->exists() ) { return; }
-
+		
 		$text = $title->getText();
+		
+		// 1. Check existence
+		if ( $title->exists() ) { 
+			// error_log("GEMINI HOOK: Skipping '$text' (Exists)");
+			return; 
+		}
+
+		// 2. Parse URL
 		$lastSlash = strrpos( $text, '/' );
 		if ( $lastSlash === false ) { return; }
 
 		$baseText = substr( $text, 0, $lastSlash );
 		$langCode = substr( $text, $lastSlash + 1 );
 		
-		// Validate Lang Code (2-3 chars or pt-br/zh-cn)
+		// 3. Validate Lang
 		$len = strlen( $langCode );
 		$isValidLang = ( $len >= 2 && $len <= 3 ) || in_array( strtolower($langCode), [ 'zh-cn', 'zh-tw', 'pt-br' ] );
 		if ( !$isValidLang ) { return; }
 
+		// 4. Check Parent
 		$parentTitle = Title::newFromText( $baseText );
-		if ( !$parentTitle || !$parentTitle->exists() ) { return; }
+		if ( !$parentTitle || !$parentTitle->exists() ) {
+			error_log("GEMINI HOOK: Skipping '$text' (Parent '$baseText' not found)");
+			return;
+		}
+
+		// LOGGING: Match found
+		error_log("GEMINI HOOK: Match! Hijacking '$text' -> Parent: '$baseText', Lang: '$langCode'");
 
 		// --- HIJACK DISPLAY ---
 		$this->renderVirtualPage( $output, $parentTitle, $langCode, $title, $user );
@@ -51,16 +66,14 @@ class VirtualPageDisplay implements BeforeInitializeHook {
 		
 		// 1. STRICT ANONYMOUS CHECK
 		if ( !$user->isNamed() ) {
-			// Show "Please log in" message using i18n
+			error_log("GEMINI HOOK: Blocked anonymous user.");
 			$output->addWikiMsg( 'geminitranslator-login-required' );
-			
-			// Force view mode to hide "Create Page" editor
 			$request = $output->getRequest();
 			$request->setVal( 'action', 'view' );
 			return; 
 		}
 
-		// 2. Load Resources for Logged-In Users
+		// 2. Load Resources
 		$output->addModules( [ 'ext.geminitranslator.bootstrap' ] );
 		$output->addInlineStyle( '.noarticletext { display: none !important; }' );
 
@@ -72,21 +85,24 @@ class VirtualPageDisplay implements BeforeInitializeHook {
 		$skeletonHtml = '';
 		
 		if ( $content ) {
+			error_log("GEMINI HOOK: Parsing parent content...");
 			$services = MediaWikiServices::getInstance();
 			$parser = $services->getParser();
 			$popts = ParserOptions::newFromContext( RequestContext::getMain() );
 			
 			$parseOut = $parser->parse( $content->getText(), $parent, $popts, true );
 			
+			// LOGGING: Call SkeletonBuilder
+			error_log("GEMINI HOOK: Content parsed. Calling SkeletonBuilder...");
 			$builder = $services->getService( 'GeminiTranslator.SkeletonBuilder' );
-			// No need for $isReadOnly flag anymore since we gate earlier
 			$skeletonHtml = $builder->createSkeleton( $parseOut->getText(), $lang );
+			error_log("GEMINI HOOK: Skeleton generated. Length: " . strlen($skeletonHtml));
 		}
 
-		// 4. Output HTML Structure
+		// 4. Output HTML
 		$html = '<div class="gemini-virtual-container">';
 		
-		// Notice Banner (using i18n via wfMessage, parsed as HTML)
+		// Notice Banner
 		$noticeMsg = \wfMessage( 'geminitranslator-viewing-live', $parent->getPrefixedText(), $parent->getText() )->parse();
 		$html .= '<div class="mw-message-box mw-message-box-notice">' . $noticeMsg . '</div>';
 		
@@ -96,12 +112,12 @@ class VirtualPageDisplay implements BeforeInitializeHook {
 
 		$output->addHTML( $html );
 		
-		// Pass Config to JS
 		$output->addJsConfigVars( [
 			'wgGeminiTargetLang' => $lang
 		] );
 
 		$request = $output->getRequest();
 		$request->setVal( 'action', 'view' );
+		error_log("GEMINI HOOK: Output sent to browser.");
 	}
 }
