@@ -24,11 +24,19 @@ class BatchTranslateHandler extends SimpleHandler {
 			$strings = array_slice( $strings, 0, 50 );
 		}
 
-		$translations = $this->translator->translateStrings( $strings, $targetLang );
+		try {
+			$translations = $this->translator->translateStrings( $strings, $targetLang );
+			
+			return $this->getResponseFactory()->createJson( [
+				'translations' => $translations
+			] );
 
-		return $this->getResponseFactory()->createJson( [
-			'translations' => $translations
-		] );
+		} catch ( \RuntimeException $e ) {
+			// Return a 500 error so the JS .fail() block triggers
+			return $this->getResponseFactory()->createJson( [
+				'error' => $e->getMessage()
+			], 500 );
+		}
 	}
 
 	public function getBodyParamSettings(): array {
