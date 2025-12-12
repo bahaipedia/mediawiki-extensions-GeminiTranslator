@@ -11,13 +11,7 @@ use MediaWiki\Extension\GeminiTranslator\PageTranslator;
 class SkeletonBuilder {
 
 	private PageTranslator $translator;
-	
 	private const IGNORE_TAGS = [ 'style', 'script', 'link', 'meta' ];
-	
-	// Namespaces to ignore when rewriting links (we only want to translate content pages)
-	private const IGNORE_NAMESPACES = [ 
-		'Special:', 'File:', 'Image:', 'Help:', 'Category:', 'MediaWiki:', 'Talk:', 'User:' 
-	];
 
 	public function __construct( PageTranslator $translator ) {
 		$this->translator = $translator;
@@ -32,9 +26,6 @@ class SkeletonBuilder {
 		$dom = new DOMDocument();
 		$dom->loadHTML( '<?xml encoding="utf-8" ?>' . $html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
 		libxml_clear_errors();
-
-		// PHASE 0: Rewrite Links (The Navigation Loop)
-		$this->rewriteLinks( $dom, $targetLang );
 
 		// PHASE 1: Harvest all text nodes
 		$textNodes = []; 
@@ -54,8 +45,10 @@ class SkeletonBuilder {
 			$rSpace = $item['rSpace'];
 
 			if ( isset( $cached[$text] ) ) {
+				// HIT: Insert translated text directly
 				$this->replaceWithText( $dom, $node, $lSpace, $cached[$text], $rSpace );
 			} else {
+				// MISS: Create Shimmer Token
 				$this->replaceWithToken( $dom, $node, $lSpace, $text, $rSpace );
 			}
 		}
@@ -64,56 +57,8 @@ class SkeletonBuilder {
 	}
 
 	/**
-	 * Scans the DOM for links and points them to the /lang version
+	 * Recursive traversal to find all text nodes
 	 */
-	private function rewriteLinks( DOMDocument $dom, string $lang ): void {
-		$links = $dom->getElementsByTagName( 'a' );
-		
-		// Convert to array to avoid modification issues during iteration
-		$linkList = iterator_to_array( $links );
-
-		foreach ( $linkList as $link ) {
-			/** @var DOMElement $link */
-			$href = $link->getAttribute( 'href' );
-			$class = $link->getAttribute( 'class' );
-
-			// 1. Skip Red Links (Pages that don't exist in English)
-			if ( strpos( $class, 'new' ) !== false ) {
-				continue;
-			}
-
-			// 2. Skip External Links or Anchors
-			if ( strpos( $href, '//' ) !== false || strpos( $href, '#' ) === 0 ) {
-				continue;
-			}
-
-			// 3. Only rewrite standard Wiki links (/wiki/Title or /Title depending on config)
-			// We look for relative paths that don't start with query strings
-			if ( strpos( $href, '/index.php?' ) !== false ) {
-				continue; // Skip complicated script calls
-			}
-
-			// 4. Decode URL to check Namespaces
-			$decoded = urldecode( $href );
-			$isSpecial = false;
-			foreach ( self::IGNORE_NAMESPACES as $ns ) {
-				if ( stripos( $decoded, $ns ) !== false ) {
-					$isSpecial = true;
-					break;
-				}
-			}
-			if ( $isSpecial ) {
-				continue;
-			}
-
-			// 5. Append Language Code
-			// Logic: If href is "/wiki/Apple", become "/wiki/Apple/es"
-			// Handle trailing slash edge case
-			$newHref = rtrim( $href, '/' ) . '/' . $lang;
-			$link->setAttribute( 'href', $newHref );
-		}
-	}
-
 	private function harvestNodes( $node, array &$textNodes, array &$rawStrings ): void {
 		if ( !$node ) { return; }
 
@@ -143,6 +88,7 @@ class SkeletonBuilder {
 				$cleanText = trim( $raw );
 
 				if ( strlen( $cleanText ) > 0 ) {
+					// Store for Phase 2
 					$textNodes[] = [
 						'node' => $child,
 						'text' => $cleanText,
@@ -161,6 +107,7 @@ class SkeletonBuilder {
 
 	private function replaceWithText( DOMDocument $dom, DOMText $originalNode, string $lSpace, string $translatedText, string $rSpace ): void {
 		$parent = $originalNode->parentNode;
+		// Combine spaces and text into one node for cleanliness
 		$fullText = $lSpace . $translatedText . $rSpace;
 		$newNode = $dom->createTextNode( $fullText );
 		$parent->replaceChild( $newNode, $originalNode );
@@ -176,6 +123,7 @@ class SkeletonBuilder {
 		$span = $dom->createElement( 'span' );
 		$span->setAttribute( 'class', 'gemini-token' );
 		$span->setAttribute( 'data-source', base64_encode( $text ) );
+		// No inline styles needed anymore - handled by gemini.css
 		$span->textContent = $text; 
 
 		$parent->insertBefore( $span, $originalNode );
