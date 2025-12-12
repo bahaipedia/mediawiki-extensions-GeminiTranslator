@@ -11,19 +11,15 @@ use MediaWiki\Extension\GeminiTranslator\PageTranslator;
 class SkeletonBuilder {
 
 	private PageTranslator $translator;
-	
 	private const IGNORE_TAGS = [ 'style', 'script', 'link', 'meta' ];
-	
-	// Namespaces to ignore when rewriting links (we only want to translate content pages)
-	private const IGNORE_NAMESPACES = [ 
-		'Special:', 'File:', 'Image:', 'Help:', 'Category:', 'MediaWiki:', 'Talk:', 'User:' 
-	];
+	private const IGNORE_NAMESPACES = [ 'Special:', 'File:', 'Image:', 'Help:', 'Category:', 'MediaWiki:', 'Talk:', 'User:' ];
 
 	public function __construct( PageTranslator $translator ) {
 		$this->translator = $translator;
 	}
 
-	public function createSkeleton( string $html, string $targetLang ): string {
+	// Added $isReadOnly parameter
+	public function createSkeleton( string $html, string $targetLang, bool $isReadOnly ): string {
 		if ( trim( $html ) === '' ) {
 			return '';
 		}
@@ -33,30 +29,34 @@ class SkeletonBuilder {
 		$dom->loadHTML( '<?xml encoding="utf-8" ?>' . $html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
 		libxml_clear_errors();
 
-		// PHASE 0: Rewrite Links (The Navigation Loop)
 		$this->rewriteLinks( $dom, $targetLang );
 
-		// PHASE 1: Harvest all text nodes
 		$textNodes = []; 
 		$rawStrings = [];
 		
 		$this->harvestNodes( $dom->documentElement, $textNodes, $rawStrings );
 
-		// PHASE 2: Check Cache
 		$cached = $this->translator->getCachedTranslations( array_unique( $rawStrings ), $targetLang );
 
-		// PHASE 3: Apply Cache or Tokenize
 		foreach ( $textNodes as $item ) {
-			/** @var DOMText $node */
 			$node = $item['node'];
 			$text = $item['text'];
 			$lSpace = $item['lSpace'];
 			$rSpace = $item['rSpace'];
 
 			if ( isset( $cached[$text] ) ) {
+				// HIT: Always show cached translation
 				$this->replaceWithText( $dom, $node, $lSpace, $cached[$text], $rSpace );
 			} else {
-				$this->replaceWithToken( $dom, $node, $lSpace, $text, $rSpace );
+				// MISS: Check Permissions
+				if ( $isReadOnly ) {
+					// ANON: Do NOT create a token. Just show English.
+					// We do nothing (node remains English), or we could wrap it in a span to indicate it's untranslated.
+					// For now, leaving it plain English is the cleanest reading experience.
+				} else {
+					// USER: Create Shimmer Token to trigger API
+					$this->replaceWithToken( $dom, $node, $lSpace, $text, $rSpace );
+				}
 			}
 		}
 
