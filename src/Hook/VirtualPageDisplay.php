@@ -22,102 +22,113 @@ class VirtualPageDisplay implements BeforeInitializeHook {
 	}
 
 	public function onBeforeInitialize( $title, $article, $output, $user, $request, $mediaWiki ): void {
-		// LOGGING: Check every page load in Main namespace
-		if ( $title->getNamespace() !== NS_MAIN ) { return; }
-		
 		$text = $title->getText();
-		
-		// 1. Check existence
-		if ( $title->exists() ) { 
-			// error_log("GEMINI HOOK: Skipping '$text' (Exists)");
-			return; 
-		}
+		error_log( "GEMINI HOOK: Checking page '$text'" );
 
-		// 2. Parse URL
-		$lastSlash = strrpos( $text, '/' );
-		if ( $lastSlash === false ) { return; }
-
-		$baseText = substr( $text, 0, $lastSlash );
-		$langCode = substr( $text, $lastSlash + 1 );
-		
-		// 3. Validate Lang
-		$len = strlen( $langCode );
-		$isValidLang = ( $len >= 2 && $len <= 3 ) || in_array( strtolower($langCode), [ 'zh-cn', 'zh-tw', 'pt-br' ] );
-		if ( !$isValidLang ) { return; }
-
-		// 4. Check Parent
-		$parentTitle = Title::newFromText( $baseText );
-		if ( !$parentTitle || !$parentTitle->exists() ) {
-			error_log("GEMINI HOOK: Skipping '$text' (Parent '$baseText' not found)");
+		// 1. Only run in Main Namespace (0)
+		if ( $title->getNamespace() !== NS_MAIN ) {
+			error_log( "GEMINI HOOK: Skipping - Not in Main Namespace (" . $title->getNamespace() . ")" );
 			return;
 		}
 
-		// LOGGING: Match found
-		error_log("GEMINI HOOK: Match! Hijacking '$text' -> Parent: '$baseText', Lang: '$langCode'");
+		// 2. If the page actually exists, let MediaWiki handle it.
+		if ( $title->exists() ) {
+			error_log( "GEMINI HOOK: Skipping - Page actually exists" );
+			return;
+		}
 
-		// --- HIJACK DISPLAY ---
-		$this->renderVirtualPage( $output, $parentTitle, $langCode, $title, $user );
-	}
-
-	private function renderVirtualPage( OutputPage $output, Title $parent, string $lang, Title $fullTitle, $user ): void {
-		$output->setPageTitle( $fullTitle->getText() );
-		$output->setArticleFlag( false ); 
-		$output->addBodyClasses( 'gemini-virtual-page' );
-		
-		// 1. STRICT ANONYMOUS CHECK
-		if ( !$user->isNamed() ) {
-			error_log("GEMINI HOOK: Blocked anonymous user.");
-			$output->addWikiMsg( 'geminitranslator-login-required' );
-			$request = $output->getRequest();
-			$request->setVal( 'action', 'view' );
+		// 3. Manual Subpage Detection
+		$lastSlash = strrpos( $text, '/' );
+		if ( $lastSlash === false ) {
+			error_log( "GEMINI HOOK: Skipping - No slash found in title" );
 			return; 
 		}
 
-		// 2. Load Resources
+		// Extract parts
+		$baseText = substr( $text, 0, $lastSlash );
+		$langCode = substr( $text, $lastSlash + 1 );
+		error_log( "GEMINI HOOK: Base: '$baseText', Lang: '$langCode'" );
+
+		// 4. Validate Language Code
+		$len = strlen( $langCode );
+		$isValidLang = ( $len >= 2 && $len <= 3 ) || in_array( strtolower($langCode), [ 'zh-cn', 'zh-tw', 'pt-br' ] );
+		
+		if ( !$isValidLang ) {
+			error_log( "GEMINI HOOK: Skipping - Invalid lang code" );
+			return;
+		}
+
+		// 5. Check if Parent exists
+		$parentTitle = Title::newFromText( $baseText );
+		
+		if ( !$parentTitle || !$parentTitle->exists() ) {
+			error_log( "GEMINI HOOK: Skipping - Parent '$baseText' does not exist" );
+			return;
+		}
+
+		error_log( "GEMINI HOOK: MATCH! Hijacking display..." );
+
+		// 6. Hijack the Display
+		$this->renderVirtualPage( $output, $parentTitle, $langCode, $title );
+	}
+
+	private function renderVirtualPage( OutputPage $output, Title $parent, string $lang, Title $fullTitle ): void {
+		$output->setPageTitle( $fullTitle->getText() );
+		$output->setArticleFlag( false ); 
+		$output->addBodyClasses( 'gemini-virtual-page' );
 		$output->addModules( [ 'ext.geminitranslator.bootstrap' ] );
 		$output->addInlineStyle( '.noarticletext { display: none !important; }' );
 
-		// 3. Get Parent Content
+		// 1. Get Parent Revision
 		$rev = $this->revisionLookup->getRevisionByTitle( $parent );
-		if ( !$rev ) { return; }
+		if ( !$rev ) { 
+			error_log( "GEMINI HOOK: Parent has no revision?" );
+			return; 
+		}
+		error_log( "GEMINI HOOK: Parent Rev ID: " . $rev->getId() );
 
+		// 2. Parse Full Content
+		// We use 'main' slot which contains the whole page wikitext
 		$content = $rev->getContent( 'main' );
-		$skeletonHtml = '';
 		
+		$skeletonHtml = '';
 		if ( $content ) {
-			error_log("GEMINI HOOK: Parsing parent content...");
 			$services = MediaWikiServices::getInstance();
 			$parser = $services->getParser();
 			$popts = ParserOptions::newFromContext( RequestContext::getMain() );
 			
+			// PARSE FULL PAGE
 			$parseOut = $parser->parse( $content->getText(), $parent, $popts, true );
 			
-			// LOGGING: Call SkeletonBuilder
-			error_log("GEMINI HOOK: Content parsed. Calling SkeletonBuilder...");
+			// Transform to Skeleton (passing language code for cache lookup)
 			$builder = $services->getService( 'GeminiTranslator.SkeletonBuilder' );
 			$skeletonHtml = $builder->createSkeleton( $parseOut->getText(), $lang );
-			error_log("GEMINI HOOK: Skeleton generated. Length: " . strlen($skeletonHtml));
 		}
 
-		// 4. Output HTML
+		// 3. Output HTML
 		$html = '<div class="gemini-virtual-container">';
-		
-		// Notice Banner
-		$noticeMsg = \wfMessage( 'geminitranslator-viewing-live', $parent->getPrefixedText(), $parent->getText() )->parse();
-		$html .= '<div class="mw-message-box mw-message-box-notice">' . $noticeMsg . '</div>';
-		
+		$html .= '<div class="mw-message-box mw-message-box-notice">';
+		$html .= '<strong>Translated Content:</strong> This page is a real-time translation of <a href="' . $parent->getLinkURL() . '">' . $parent->getText() . '</a>.';
+		$html .= '</div>';
 		$html .= '<div id="gemini-virtual-content" style="margin-top: 20px;">';
-		$html .= $skeletonHtml;
+		
+		if ( empty( $skeletonHtml ) ) {
+			$html .= '<div class="gemini-loading">Loading...</div>';
+		} else {
+			$html .= $skeletonHtml;
+		}
+		
 		$html .= '</div></div>';
 
 		$output->addHTML( $html );
 		
 		$output->addJsConfigVars( [
+			'wgGeminiParentRevId' => $rev->getId(),
 			'wgGeminiTargetLang' => $lang
 		] );
 
 		$request = $output->getRequest();
 		$request->setVal( 'action', 'view' );
-		error_log("GEMINI HOOK: Output sent to browser.");
+		error_log( "GEMINI HOOK: Output injected." );
 	}
 }
