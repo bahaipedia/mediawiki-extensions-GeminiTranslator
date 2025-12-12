@@ -1,6 +1,6 @@
 window.ext = window.ext || {};
 window.ext.geminiTranslator = window.ext.geminiTranslator || {};
-console.log('Gemini: Loaded v9 bootstrap.js');
+console.log('Gemini: Loaded v10 bootstrap.js');
 ( function ( mw, $ ) {
 
     // --- Helper: Correctly decode UTF-8 from Base64 ---
