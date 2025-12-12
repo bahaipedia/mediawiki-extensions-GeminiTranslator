@@ -35,12 +35,10 @@
 				"gemini.css"
 			],
 			"messages": [
+				"geminitranslator-ui-translating",
+				"geminitranslator-ui-translated",
 				"geminitranslator-ui-error",
-				"geminitranslator-ui-retry",
-				"geminitranslator-dialog-title",
-				"geminitranslator-dialog-prompt",
-				"geminitranslator-dialog-go",
-				"geminitranslator-dialog-cancel"
+				"geminitranslator-ui-original"
 			],
 			"dependencies": [
 				"oojs-ui"
