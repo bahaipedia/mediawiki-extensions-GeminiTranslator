@@ -3,7 +3,9 @@
 namespace MediaWiki\Extension\GeminiTranslator\Rest;
 
 use MediaWiki\Extension\GeminiTranslator\PageTranslator;
+use MediaWiki\Logger\LoggerFactory;
 use MediaWiki\Rest\SimpleHandler;
+use MediaWiki\Context\RequestContext; // Added to get the real IP
 use Wikimedia\ParamValidator\ParamValidator;
 
 class BatchTranslateHandler extends SimpleHandler {
@@ -18,25 +20,31 @@ class BatchTranslateHandler extends SimpleHandler {
 		$body = $this->getValidatedBody();
 		$strings = $body['strings'] ?? [];
 		$targetLang = $body['targetLang'];
-		$pageTitle = $body['pageTitle'] ?? 'Unknown Page'; // New parameter
 		$request = $this->getRequest();
 
-		// --- IP EXTRACTION (REST API Workaround) ---
-		// Since RequestInterface lacks getIP(), and we are behind Varnish/Nginx,
-		// we check X-Forwarded-For first.
-		$ip = $request->getHeader( 'X-Forwarded-For' );
-		if ( !$ip ) {
-			$serverParams = $request->getServerParams();
-			$ip = $serverParams['REMOTE_ADDR'] ?? 'Unknown';
-		}
-		// If multiple IPs are in the chain, take the first one (usually the client)
-		$ipParts = explode( ',', $ip );
-		$clientIp = trim( $ipParts[0] );
-
 		// --- LOGGING ---
-		// Format: "REALIP <ip> <Page Title> /<lang>"
-		$logMsg = sprintf( "REALIP %s %s /%s", $clientIp, $pageTitle, $targetLang );
-		error_log( $logMsg );
+		try {
+			// FIX: Use RequestContext to get the IP. 
+			// The REST $request object does not have getIP(), but the global context does.
+			$realIp = RequestContext::getMain()->getRequest()->getIP();
+			
+			$authority = $this->getAuthority();
+			$user = $authority ? $authority->getUser() : null;
+
+			LoggerFactory::getInstance( 'GeminiTranslator' )->info(
+				'Batch request received',
+				[
+					'ip' => $realIp,
+					'target_lang' => $targetLang,
+					'count' => count( $strings ),
+					'user' => $user ? $user->getName() : 'Unknown',
+					'user_agent' => $request->getHeader( 'User-Agent' )
+				]
+			);
+		} catch ( \Throwable $e ) {
+			// If logger fails, use error_log so we don't crash the translation
+			error_log( 'GeminiTranslator Logger Error: ' . $e->getMessage() );
+		}
 
 		// --- PROCESSING ---
 
@@ -54,7 +62,11 @@ class BatchTranslateHandler extends SimpleHandler {
 
 		} catch ( \RuntimeException $e ) {
 			
-			error_log( "GEMINI ERROR: " . $e->getMessage() );
+			// Log API failures
+			LoggerFactory::getInstance( 'GeminiTranslator' )->error(
+				'API Failure',
+				[ 'error' => $e->getMessage() ]
+			);
 
 			return $this->getResponseFactory()->createJson( [
 				'error' => $e->getMessage()
@@ -73,13 +85,6 @@ class BatchTranslateHandler extends SimpleHandler {
 				self::PARAM_SOURCE => 'body',
 				ParamValidator::PARAM_TYPE => 'string',
 				ParamValidator::PARAM_REQUIRED => true,
-			],
-			// Add the new optional parameter for logging
-			'pageTitle' => [
-				self::PARAM_SOURCE => 'body',
-				ParamValidator::PARAM_TYPE => 'string',
-				ParamValidator::PARAM_REQUIRED => false,
-				ParamValidator::PARAM_DEFAULT => 'Unknown Page',
 			]
 		];
 	}
