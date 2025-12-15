@@ -102,11 +102,19 @@ console.log('Gemini: Loaded v15 bootstrap.js');
         activeRequests++;
         var currentBatch = batchQueue.shift();
 
+        // Get the current page title
+        var currentTitle = mw.config.get( 'wgPageName' ).replace( /_/g, ' ' );
+
         $.ajax( {
             method: 'POST',
             url: mw.util.wikiScript( 'rest' ) + '/gemini-translator/translate_batch',
             contentType: 'application/json',
-            data: JSON.stringify( { strings: currentBatch, targetLang: targetLang } )
+            // UPDATE: Added pageTitle to the JSON payload
+            data: JSON.stringify( { 
+                strings: currentBatch, 
+                targetLang: targetLang,
+                pageTitle: currentTitle
+            } )
         } ).done( function( data ) {
             // Success: Update UI
             applyTranslations( data.translations );
