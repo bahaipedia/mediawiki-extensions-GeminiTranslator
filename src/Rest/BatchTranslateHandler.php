@@ -3,6 +3,7 @@
 namespace MediaWiki\Extension\GeminiTranslator\Rest;
 
 use MediaWiki\Extension\GeminiTranslator\PageTranslator;
+use MediaWiki\Logger\LoggerFactory;
 use MediaWiki\Rest\SimpleHandler;
 use Wikimedia\ParamValidator\ParamValidator;
 
@@ -15,21 +16,34 @@ class BatchTranslateHandler extends SimpleHandler {
 	}
 
 	public function execute() {
-		$request = $this->getRequest();
 		$body = $this->getValidatedBody();
 		$strings = $body['strings'] ?? [];
 		$targetLang = $body['targetLang'];
+		$request = $this->getRequest();
 
-		// --- LOGGING ---
-		// Using wfDebugLog to match $wgDebugLogGroups['GeminiTranslator']
-		$logData = [
-			'event' => 'batch_start',
-			'ip' => $request->getIP(),
-			'target_lang' => $targetLang,
-			'count' => count( $strings ),
-			'user_agent' => $request->getHeader( 'User-Agent' )
-		];
-		wfDebugLog( 'GeminiTranslator', json_encode( $logData ) );
+		// --- LOGGING (Correct LoggerFactory implementation) ---
+		// This logs to the channel 'GeminiTranslator'.
+		// If using Monolog (standard in MW), this usually routes to specific files or the main log.
+		try {
+			$authority = $this->getAuthority();
+			$user = $authority ? $authority->getUser() : null;
+
+			LoggerFactory::getInstance( 'GeminiTranslator' )->info(
+				'Batch request received',
+				[
+					'ip' => $request->getIP(),
+					'target_lang' => $targetLang,
+					'count' => count( $strings ),
+					'user' => $user ? $user->getName() : 'Unknown',
+					'user_agent' => $request->getHeader( 'User-Agent' )
+				]
+			);
+		} catch ( \Throwable $e ) {
+			// Fail silently to error_log if the Logger service itself is broken
+			error_log( 'GeminiTranslator Logger Error: ' . $e->getMessage() );
+		}
+
+		// --- PROCESSING ---
 
 		// Limit batch size for safety
 		if ( count( $strings ) > 50 ) {
@@ -45,9 +59,12 @@ class BatchTranslateHandler extends SimpleHandler {
 
 		} catch ( \RuntimeException $e ) {
 			
-			wfDebugLog( 'GeminiTranslator', 'ERROR: ' . $e->getMessage() );
+			// Log the specific API failure via LoggerFactory
+			LoggerFactory::getInstance( 'GeminiTranslator' )->error(
+				'API Failure',
+				[ 'error' => $e->getMessage() ]
+			);
 
-			// Return a 500 error so the JS .fail() block triggers
 			return $this->getResponseFactory()->createJson( [
 				'error' => $e->getMessage()
 			], 500 );
