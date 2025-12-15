@@ -5,6 +5,7 @@ namespace MediaWiki\Extension\GeminiTranslator\Rest;
 use MediaWiki\Extension\GeminiTranslator\PageTranslator;
 use MediaWiki\Logger\LoggerFactory;
 use MediaWiki\Rest\SimpleHandler;
+use MediaWiki\Context\RequestContext; // Added to get the real IP
 use Wikimedia\ParamValidator\ParamValidator;
 
 class BatchTranslateHandler extends SimpleHandler {
@@ -21,17 +22,19 @@ class BatchTranslateHandler extends SimpleHandler {
 		$targetLang = $body['targetLang'];
 		$request = $this->getRequest();
 
-		// --- LOGGING (Correct LoggerFactory implementation) ---
-		// This logs to the channel 'GeminiTranslator'.
-		// If using Monolog (standard in MW), this usually routes to specific files or the main log.
+		// --- LOGGING ---
 		try {
+			// FIX: Use RequestContext to get the IP. 
+			// The REST $request object does not have getIP(), but the global context does.
+			$realIp = RequestContext::getMain()->getRequest()->getIP();
+			
 			$authority = $this->getAuthority();
 			$user = $authority ? $authority->getUser() : null;
 
 			LoggerFactory::getInstance( 'GeminiTranslator' )->info(
 				'Batch request received',
 				[
-					'ip' => $request->getIP(),
+					'ip' => $realIp,
 					'target_lang' => $targetLang,
 					'count' => count( $strings ),
 					'user' => $user ? $user->getName() : 'Unknown',
@@ -39,7 +42,7 @@ class BatchTranslateHandler extends SimpleHandler {
 				]
 			);
 		} catch ( \Throwable $e ) {
-			// Fail silently to error_log if the Logger service itself is broken
+			// If logger fails, use error_log so we don't crash the translation
 			error_log( 'GeminiTranslator Logger Error: ' . $e->getMessage() );
 		}
 
@@ -59,7 +62,7 @@ class BatchTranslateHandler extends SimpleHandler {
 
 		} catch ( \RuntimeException $e ) {
 			
-			// Log the specific API failure via LoggerFactory
+			// Log API failures
 			LoggerFactory::getInstance( 'GeminiTranslator' )->error(
 				'API Failure',
 				[ 'error' => $e->getMessage() ]
